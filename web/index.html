@@ -50,13 +50,13 @@
   <h1>Hypercast <span class="accent">社区中继目录</span></h1>
   <div class="subtitle">发现 · 比对 · 扫码即用 —— 端到端加密，任何中继（含官方）无法查看你的画面与操作</div>
   <div class="notice"><b>收录 ≠ 背书</b>：以下均为社区中继 · 第三方运营，官方只做登记与探测，不做认证。
-    「探测」列为目录主动实测，「自报」列为节点自己上报——两者分开看，谁在说谎一目了然。</div>
-  <table id="nodes-table">
+    「探测」列为目录主动实测，「自报」列为节点自己上报——两者分开看，谁在说谎一目了然。「带宽」为信令口实测吞吐（2 MiB 传输计时，非 TURN UDP 媒体吞吐），作为节点网络容量近似。</div>
+  <div style="overflow-x:auto"><table id="nodes-table">
     <thead><tr>
-      <th>节点</th><th>探测（官方实测）</th><th>自报（节点上报）</th><th>版本</th><th>最近上报</th><th>信号地址</th><th></th>
+      <th>节点</th><th>探测（官方实测）</th><th>带宽（实测）</th><th>自报（节点上报）</th><th>版本</th><th>最近上报</th><th>信号地址</th><th></th>
     </tr></thead>
-    <tbody><tr><td colspan="7" class="dim">加载中…</td></tr></tbody>
-  </table>
+    <tbody><tr><td colspan="8" class="dim">加载中…</td></tr></tbody>
+  </table></div>
   <div class="footer" id="footer"></div>
 </div>
 <div id="overlay"><div class="qr-card" id="qr-card"></div></div>
@@ -97,15 +97,26 @@ async function refresh() {
     const v = await r.json();
     const tb = document.querySelector('#nodes-table tbody');
     if (!v.nodes || !v.nodes.length) {
-      tb.innerHTML = '<tr><td colspan="7" class="dim">暂无节点——部署 hypercast-relay 并设置 HYPERCAST_DIRECTORY_URL 即可出现在这里</td></tr>';
+      tb.innerHTML = '<tr><td colspan="8" class="dim">暂无节点——部署 hypercast-relay 并设置 HYPERCAST_DIRECTORY_URL 即可出现在这里</td></tr>';
     } else {
       tb.innerHTML = v.nodes.map((n, i) => {
         const pr = n.probed, rp = n.reported;
+        const avail = n.probe_history && n.probe_history.length
+          ? '稳定性 ' + Math.round(n.probe_history.filter(Boolean).length * 100 / n.probe_history.length) + '%（' + n.probe_history.filter(Boolean).length + '/' + n.probe_history.length + '）'
+          : '';
         const probeCell = pr
           ? (pr.status === 'up'
               ? '<span class="dot up"></span>在线 · ' + (pr.latency_ms != null ? pr.latency_ms + ' ms' : '')
               : '<span class="dot down"></span>不可达')
+            + (avail ? '<br><span class="dim">' + avail + '</span>' : '')
           : '<span class="dot unknown"></span>待探测';
+        const mbps = (k) => k >= 1000 ? (k / 1000).toFixed(1) + ' Mbps' : k + ' kbps';
+        const bwCell = n.bandwidth_recent_kbps != null
+          ? mbps(n.bandwidth_recent_kbps)
+            + (n.bandwidth_samples_kbps && n.bandwidth_samples_kbps.length > 1
+                ? '<br><span class="dim">均值 ' + mbps(Math.round(n.bandwidth_samples_kbps.reduce((a, b) => a + b, 0) / n.bandwidth_samples_kbps.length)) + '</span>'
+                : '')
+          : '—';
         const selfCell = rp
           ? 'uptime ' + Math.floor(rp.uptime_s/3600) + 'h' + Math.floor(rp.uptime_s%3600/60) + 'm'
             + '<br><span class="dim">注册 ' + (rp.metrics.mailbox_registrations_total || 0)
@@ -113,6 +124,7 @@ async function refresh() {
           : '—';
         return '<tr><td>' + n.node_id + (n.region ? '<br><span class="dim">' + n.region + '</span>' : '') + '</td>'
           + '<td>' + probeCell + '</td>'
+          + '<td>' + bwCell + '</td>'
           + '<td>' + selfCell + '</td>'
           + '<td>' + (n.protocol_version || '—') + '</td>'
           + '<td>' + fmtAgo(n.last_seen) + '</td>'
@@ -127,7 +139,7 @@ async function refresh() {
       '共 ' + (v.nodes ? v.nodes.length : 0) + ' 个节点 · 每 30 秒自动刷新 · 遥测仅聚合计数，绝无用户粒度数据';
   } catch (e) {
     document.querySelector('#nodes-table tbody').innerHTML =
-      '<tr><td colspan="7" class="dim">加载失败：' + e + '</td></tr>';
+      '<tr><td colspan="8" class="dim">加载失败：' + e + '</td></tr>';
   }
 }
 refresh();
