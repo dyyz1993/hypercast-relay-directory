@@ -1,0 +1,28 @@
+[package]
+name = "hypercast-relay-directory"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Hypercast 社区中继目录（收录 / 遥测接收 / 主动探测 / 展示）"
+
+[[bin]]
+name = "hypercast-relay-directory"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0"
+axum = "0.7.9"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1.40", features = ["rt-multi-thread", "sync", "macros", "time", "net", "signal"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+# 探测器 HTTP 客户端（阻塞式，跑在 spawn_blocking）
+ureq = "2.10"
+
+[dev-dependencies]
+tower = "0.5"
+
+[profile.release]
+lto = "thin"
+strip = true
