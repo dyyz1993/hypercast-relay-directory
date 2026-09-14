@@ -15,7 +15,10 @@ use crate::state::{Directory, NodeMeta};
 pub fn router(directory: Arc<Directory>) -> Router {
     Router::new()
         .route("/", get(index_page))
-        .route("/healthz", get(|| async { Json(serde_json::json!({"status": "ok"})) }))
+        .route(
+            "/healthz",
+            get(|| async { Json(serde_json::json!({"status": "ok"})) }),
+        )
         .route("/api/v1/register", post(register))
         .route("/api/v1/report", post(report))
         .route("/api/v1/nodes", get(list_nodes))
@@ -23,9 +26,15 @@ pub fn router(directory: Arc<Directory>) -> Router {
         .with_state(directory)
 }
 
-async fn index_page() -> ([(axum::http::header::HeaderName, &'static str); 1], &'static str) {
+async fn index_page() -> (
+    [(axum::http::header::HeaderName, &'static str); 1],
+    &'static str,
+) {
     use axum::http::header;
-    ([(header::CONTENT_TYPE, "text/html; charset=utf-8")], include_str!("../web/index.html"))
+    (
+        [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
+        include_str!("../web/index.html"),
+    )
 }
 
 #[derive(Deserialize, Debug)]
@@ -45,7 +54,10 @@ async fn register(
 ) -> Result<(StatusCode, Json<serde_json::Value>), (StatusCode, String)> {
     let node_id = req.node_id.trim().to_owned();
     if node_id.is_empty() || node_id.len() > 64 {
-        return Err((StatusCode::BAD_REQUEST, "node_id must be 1..=64 chars".into()));
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "node_id must be 1..=64 chars".into(),
+        ));
     }
     let meta = NodeMeta {
         name: req.name,
@@ -54,8 +66,13 @@ async fn register(
         protocol_version: req.protocol_version,
         owner_contact: req.owner_contact,
     };
-    let rec = dir.upsert(&node_id, meta).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    Ok((StatusCode::CREATED, Json(serde_json::json!({"node_id": rec.node_id, "ok": true}))))
+    let rec = dir
+        .upsert(&node_id, meta)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok((
+        StatusCode::CREATED,
+        Json(serde_json::json!({"node_id": rec.node_id, "ok": true})),
+    ))
 }
 
 #[derive(Deserialize, Debug)]
@@ -75,7 +92,10 @@ async fn report(
 ) -> Result<StatusCode, (StatusCode, String)> {
     let node_id = req.node_id.trim().to_owned();
     if node_id.is_empty() || node_id.len() > 64 {
-        return Err((StatusCode::BAD_REQUEST, "node_id must be 1..=64 chars".into()));
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "node_id must be 1..=64 chars".into(),
+        ));
     }
     let meta = NodeMeta {
         name: None,
@@ -97,7 +117,9 @@ async fn get_node(
     State(dir): State<Arc<Directory>>,
     Path(node_id): Path<String>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
-    dir.get(&node_id).map(|n| Json(serde_json::json!(n))).ok_or(StatusCode::NOT_FOUND)
+    dir.get(&node_id)
+        .map(|n| Json(serde_json::json!(n)))
+        .ok_or(StatusCode::NOT_FOUND)
 }
 
 #[cfg(test)]
@@ -128,28 +150,37 @@ mod tests {
             .await
             .unwrap();
         let status = resp.status();
-        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
         (status, serde_json::from_slice(&bytes).unwrap())
     }
 
     #[tokio::test]
     async fn report_auto_registers_then_listed() {
         let router = router(Arc::new(Directory::in_memory()));
-        let st = post_json(&router, "/api/v1/report", serde_json::json!({
-            "schema": "hc-telemetry/1",
-            "node_id": "node-a",
-            "signal_url": "http://10.0.0.1:8443",
-            "protocol_version": "1.1",
-            "uptime_s": 61,
-            "metrics": {"mailbox_registrations_total": 2}
-        }))
+        let st = post_json(
+            &router,
+            "/api/v1/report",
+            serde_json::json!({
+                "schema": "hc-telemetry/1",
+                "node_id": "node-a",
+                "signal_url": "http://10.0.0.1:8443",
+                "protocol_version": "1.1",
+                "uptime_s": 61,
+                "metrics": {"mailbox_registrations_total": 2}
+            }),
+        )
         .await;
         assert_eq!(st, StatusCode::NO_CONTENT);
 
         let (st, v) = get_json(&router, "/api/v1/nodes").await;
         assert_eq!(st, StatusCode::OK);
         assert_eq!(v["nodes"][0]["node_id"], "node-a");
-        assert_eq!(v["nodes"][0]["reported"]["metrics"]["mailbox_registrations_total"], 2);
+        assert_eq!(
+            v["nodes"][0]["reported"]["metrics"]["mailbox_registrations_total"],
+            2
+        );
 
         let (st, v) = get_json(&router, "/api/v1/nodes/node-a").await;
         assert_eq!(st, StatusCode::OK);
@@ -159,9 +190,13 @@ mod tests {
     #[tokio::test]
     async fn reject_bad_node_id() {
         let router = router(Arc::new(Directory::in_memory()));
-        let st = post_json(&router, "/api/v1/report", serde_json::json!({
-            "node_id": "", "uptime_s": 1
-        }))
+        let st = post_json(
+            &router,
+            "/api/v1/report",
+            serde_json::json!({
+                "node_id": "", "uptime_s": 1
+            }),
+        )
         .await;
         assert_eq!(st, StatusCode::BAD_REQUEST);
     }

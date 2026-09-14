@@ -1,14 +1,10 @@
 //! Hypercast 社区中继目录服务（MVP：收录 / 遥测接收 / 主动探测 / 展示网页）。
 
-mod api;
-mod prober;
-mod state;
-
 use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Context;
-use state::Directory;
+use hypercast_relay_directory::{api, prober, state::Directory};
 
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> anyhow::Result<()> {
@@ -29,14 +25,20 @@ async fn main() -> anyhow::Result<()> {
         .and_then(|v| v.parse().ok())
         .unwrap_or(60);
 
-    let directory = Arc::new(Directory::load(data_file.as_deref()).context("load directory state")?);
+    let directory =
+        Arc::new(Directory::load(data_file.as_deref()).context("load directory state")?);
     if probe_enabled {
-        prober::spawn(directory.clone(), Duration::from_secs(probe_interval.max(10)));
+        prober::spawn(
+            directory.clone(),
+            Duration::from_secs(probe_interval.max(10)),
+        );
         tracing::info!(interval_s = probe_interval, "prober enabled");
     }
 
     let app = api::router(directory.clone());
-    let listener = tokio::net::TcpListener::bind(&bind).await.context("bind directory")?;
+    let listener = tokio::net::TcpListener::bind(&bind)
+        .await
+        .context("bind directory")?;
     tracing::info!(%bind, "Hypercast relay directory listening");
     axum::serve(listener, app).await.context("serve directory")
 }

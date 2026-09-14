@@ -71,7 +71,10 @@ pub struct Directory {
 impl Directory {
     /// 空目录（测试用）。
     pub fn in_memory() -> Self {
-        Self { nodes: RwLock::new(HashMap::new()), file: None }
+        Self {
+            nodes: RwLock::new(HashMap::new()),
+            file: None,
+        }
     }
 
     /// 从文件加载（不存在则新建空表）。
@@ -83,32 +86,47 @@ impl Directory {
             }
             _ => HashMap::new(),
         };
-        Ok(Self { nodes: RwLock::new(nodes), file: path.map(Path::to_path_buf) })
+        Ok(Self {
+            nodes: RwLock::new(nodes),
+            file: path.map(Path::to_path_buf),
+        })
     }
 
     /// upsert：注册元数据 + 触碰时间。返回节点快照。
     pub fn upsert(&self, node_id: &str, meta: NodeMeta) -> anyhow::Result<NodeRecord> {
         let mut nodes = self.nodes.write().unwrap();
         let now = now_secs();
-        let rec = nodes.entry(node_id.to_owned()).or_insert_with(|| NodeRecord {
-            node_id: node_id.to_owned(),
-            name: None,
-            region: None,
-            signal_url: None,
-            protocol_version: None,
-            owner_contact: None,
-            first_seen: now,
-            last_seen: now,
-            reported: None,
-            probed: None,
-            probe_failures_streak: 0,
-        });
+        let rec = nodes
+            .entry(node_id.to_owned())
+            .or_insert_with(|| NodeRecord {
+                node_id: node_id.to_owned(),
+                name: None,
+                region: None,
+                signal_url: None,
+                protocol_version: None,
+                owner_contact: None,
+                first_seen: now,
+                last_seen: now,
+                reported: None,
+                probed: None,
+                probe_failures_streak: 0,
+            });
         rec.last_seen = now;
-        if meta.name.is_some() { rec.name = meta.name; }
-        if meta.region.is_some() { rec.region = meta.region; }
-        if meta.signal_url.is_some() { rec.signal_url = meta.signal_url; }
-        if meta.protocol_version.is_some() { rec.protocol_version = meta.protocol_version; }
-        if meta.owner_contact.is_some() { rec.owner_contact = meta.owner_contact; }
+        if meta.name.is_some() {
+            rec.name = meta.name;
+        }
+        if meta.region.is_some() {
+            rec.region = meta.region;
+        }
+        if meta.signal_url.is_some() {
+            rec.signal_url = meta.signal_url;
+        }
+        if meta.protocol_version.is_some() {
+            rec.protocol_version = meta.protocol_version;
+        }
+        if meta.owner_contact.is_some() {
+            rec.owner_contact = meta.owner_contact;
+        }
         let snapshot = rec.clone();
         drop(nodes);
         self.persist()?;
@@ -125,23 +143,33 @@ impl Directory {
     ) -> anyhow::Result<NodeRecord> {
         let mut nodes = self.nodes.write().unwrap();
         let now = now_secs();
-        let rec = nodes.entry(node_id.to_owned()).or_insert_with(|| NodeRecord {
-            node_id: node_id.to_owned(),
-            name: Some(node_id.to_owned()),
-            region: None,
-            signal_url: None,
-            protocol_version: None,
-            owner_contact: None,
-            first_seen: now,
-            last_seen: now,
-            reported: None,
-            probed: None,
-            probe_failures_streak: 0,
-        });
+        let rec = nodes
+            .entry(node_id.to_owned())
+            .or_insert_with(|| NodeRecord {
+                node_id: node_id.to_owned(),
+                name: Some(node_id.to_owned()),
+                region: None,
+                signal_url: None,
+                protocol_version: None,
+                owner_contact: None,
+                first_seen: now,
+                last_seen: now,
+                reported: None,
+                probed: None,
+                probe_failures_streak: 0,
+            });
         rec.last_seen = now;
-        if meta.signal_url.is_some() { rec.signal_url = meta.signal_url; }
-        if meta.protocol_version.is_some() { rec.protocol_version = meta.protocol_version; }
-        rec.reported = Some(TelemetrySnapshot { uptime_s, metrics, at: now });
+        if meta.signal_url.is_some() {
+            rec.signal_url = meta.signal_url;
+        }
+        if meta.protocol_version.is_some() {
+            rec.protocol_version = meta.protocol_version;
+        }
+        rec.reported = Some(TelemetrySnapshot {
+            uptime_s,
+            metrics,
+            at: now,
+        });
         let snapshot = rec.clone();
         drop(nodes);
         self.persist()?;
@@ -157,10 +185,20 @@ impl Directory {
         status_code: Option<u16>,
     ) -> anyhow::Result<()> {
         let mut nodes = self.nodes.write().unwrap();
-        let Some(rec) = nodes.get_mut(node_id) else { return Ok(()) };
-        rec.probe_failures_streak = if ok { 0 } else { rec.probe_failures_streak.saturating_add(1) };
+        let Some(rec) = nodes.get_mut(node_id) else {
+            return Ok(());
+        };
+        rec.probe_failures_streak = if ok {
+            0
+        } else {
+            rec.probe_failures_streak.saturating_add(1)
+        };
         rec.probed = Some(ProbeSnapshot {
-            status: if ok || rec.probe_failures_streak < 3 { "up".into() } else { "down".into() },
+            status: if ok || rec.probe_failures_streak < 3 {
+                "up".into()
+            } else {
+                "down".into()
+            },
             latency_ms: if ok { latency_ms } else { None },
             status_code,
             checked_at: now_secs(),
@@ -182,7 +220,9 @@ impl Directory {
 
     /// 原子落盘：先写 tmp 再 rename。
     fn persist(&self) -> anyhow::Result<()> {
-        let Some(path) = &self.file else { return Ok(()) };
+        let Some(path) = &self.file else {
+            return Ok(());
+        };
         let tmp = path.with_extension("json.tmp");
         let json = serde_json::to_string_pretty(&*self.nodes.read().unwrap())?;
         std::fs::write(&tmp, json)?;
@@ -196,19 +236,27 @@ mod tests {
     use super::*;
 
     fn meta(signal: Option<&str>) -> NodeMeta {
-        NodeMeta { name: None, region: None, signal_url: signal.map(str::to_owned), protocol_version: None, owner_contact: None }
+        NodeMeta {
+            name: None,
+            region: None,
+            signal_url: signal.map(str::to_owned),
+            protocol_version: None,
+            owner_contact: None,
+        }
     }
 
     #[test]
     fn report_auto_registers_and_merges() {
         let dir = Directory::in_memory();
-        dir.apply_report("a", meta(Some("http://x:1")), 60, HashMap::new()).unwrap();
+        dir.apply_report("a", meta(Some("http://x:1")), 60, HashMap::new())
+            .unwrap();
         let rec = dir.get("a").unwrap();
         assert_eq!(rec.signal_url.as_deref(), Some("http://x:1"));
         assert_eq!(rec.reported.as_ref().unwrap().uptime_s, 60);
 
         // signal_url=None 不覆盖已有值
-        dir.apply_report("a", meta(None), 120, HashMap::new()).unwrap();
+        dir.apply_report("a", meta(None), 120, HashMap::new())
+            .unwrap();
         let rec = dir.get("a").unwrap();
         assert_eq!(rec.signal_url.as_deref(), Some("http://x:1"));
         assert_eq!(rec.reported.as_ref().unwrap().uptime_s, 120);
@@ -234,7 +282,8 @@ mod tests {
         let _ = std::fs::remove_file(&tmp);
         {
             let dir = Directory::load(Some(&tmp)).unwrap();
-            dir.apply_report("a", meta(Some("http://x:1")), 5, HashMap::new()).unwrap();
+            dir.apply_report("a", meta(Some("http://x:1")), 5, HashMap::new())
+                .unwrap();
         }
         let dir2 = Directory::load(Some(&tmp)).unwrap();
         assert!(dir2.get("a").is_some());
