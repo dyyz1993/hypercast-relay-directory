@@ -58,3 +58,14 @@
 | `HC_DIRECTORY_DATA_FILE` | 无（纯内存） | 状态落盘路径（JSON，原子写） |
 | `HC_DIRECTORY_PROBE_ENABLED` | `true` | 关闭探测 |
 | `HC_DIRECTORY_PROBE_INTERVAL_SECS` | `60` | 探测周期（下限 10） |
+
+## v1.1（规划中，向后兼容）
+
+`register` / `report` 增加 `capabilities` 字段：
+
+```json
+"capabilities": { "turn": true }
+```
+
+- `turn=false` = 仅信令节点（如 CF Workers 部署）：打洞失败无中继兜底，目录网页必须标注「无中继兜底」，禁止被误读为完整中继。
+- 未携带该字段的历史节点按 `turn=true` 处理（向后兼容）。
