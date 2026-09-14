@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hypercast 社区中继目录</title>
+<script src="/qr.js"></script>
+<style>
+  :root {
+    --canvas:#07121C; --surface:#0E1D2A; --raised:#142636; --stroke:#294559;
+    --text1:#F2F6F8; --text2:#AFC0CB; --text3:#7891A2;
+    --accent:#51D5C0; --success:#5ED9B9; --warning:#E4AE5A; --danger:#F06D75;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--canvas); color:var(--text1);
+    font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif; line-height:1.6; }
+  .page { max-width:1080px; margin:0 auto; padding:36px 24px 80px; }
+  h1 { font-size:24px; margin:0 0 4px; }
+  h1 .accent { color:var(--accent); }
+  .subtitle { color:var(--text3); font-size:13px; margin-bottom:18px; }
+  .notice { border:1px solid rgba(228,174,90,.4); background:rgba(228,174,90,.06);
+    border-radius:12px; padding:10px 16px; font-size:13px; color:var(--text2); margin:14px 0; }
+  .notice b { color:var(--warning); }
+  table { width:100%; border-collapse:collapse; margin:16px 0; font-size:13.5px; }
+  th { text-align:left; color:var(--text1); background:var(--raised); padding:10px;
+    border:1px solid var(--stroke); font-weight:600; }
+  td { color:var(--text2); padding:9px 10px; border:1px solid var(--stroke); vertical-align:top; }
+  td:first-child { color:var(--text1); font-weight:600; }
+  .dot { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:6px; vertical-align:1px; }
+  .up { background:var(--success); box-shadow:0 0 6px var(--success); }
+  .down { background:var(--danger); box-shadow:0 0 6px var(--danger); }
+  .unknown { background:var(--text3); }
+  .dim { color:var(--text3); }
+  .btn { background:none; border:1px solid var(--stroke); color:var(--accent);
+    border-radius:8px; padding:3px 10px; font-size:12.5px; cursor:pointer; }
+  .btn:hover { border-color:var(--accent); }
+  .footer { color:var(--text3); font-size:12.5px; margin-top:28px; }
+  #overlay { position:fixed; inset:0; background:rgba(0,0,0,.6); display:none;
+    align-items:center; justify-content:center; }
+  #overlay.show { display:flex; }
+  .qr-card { background:var(--surface); border:1px solid var(--stroke); border-radius:16px;
+    padding:24px; text-align:center; }
+  .qr-card img, .qr-card svg { background:#fff; border-radius:8px; padding:8px; }
+  .qr-card .code { color:var(--accent); font-family:Menlo,monospace; font-size:12px;
+    margin-top:10px; word-break:break-all; max-width:340px; }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>Hypercast <span class="accent">社区中继目录</span></h1>
+  <div class="subtitle">发现 · 比对 · 扫码即用 —— 端到端加密，任何中继（含官方）无法查看你的画面与操作</div>
+  <div class="notice"><b>收录 ≠ 背书</b>：以下均为社区中继 · 第三方运营，官方只做登记与探测，不做认证。
+    「探测」列为目录主动实测，「自报」列为节点自己上报——两者分开看，谁在说谎一目了然。</div>
+  <table id="nodes-table">
+    <thead><tr>
+      <th>节点</th><th>探测（官方实测）</th><th>自报（节点上报）</th><th>版本</th><th>最近上报</th><th>信号地址</th><th></th>
+    </tr></thead>
+    <tbody><tr><td colspan="7" class="dim">加载中…</td></tr></tbody>
+  </table>
+  <div class="footer" id="footer"></div>
+</div>
+<div id="overlay"><div class="qr-card" id="qr-card"></div></div>
+<script>
+function fmtAgo(secs) {
+  if (!secs && secs !== 0) return '—';
+  const d = Math.max(0, Math.floor(Date.now()/1000 - secs));
+  if (d < 90) return d + ' 秒前';
+  if (d < 5400) return Math.round(d/60) + ' 分钟前';
+  if (d < 172800) return Math.round(d/3600) + ' 小时前';
+  return Math.round(d/86400) + ' 天前';
+}
+function configCode(node) {
+  // config-code v1（简化版）：hcrelay1://<signal_url>#<node_id>（正式版将加签名，见 schema/config-code-v1.md）
+  return 'hcrelay1://' + (node.signal_url || '') + '#' + node.node_id;
+}
+function showQr(node) {
+  const card = document.getElementById('qr-card');
+  const code = configCode(node);
+  try {
+    const qr = qrcode(0, 'M');
+    qr.addData(code); qr.make();
+    card.innerHTML = qr.createSvgTag({ cellSize: 5, margin: 2 })
+      + '<div style="margin-top:10px;font-weight:600">' + node.node_id + ' · 服务配置码</div>'
+      + '<div class="code">' + code + '</div>';
+  } catch (e) {
+    card.innerHTML = '<div style="font-weight:600">' + node.node_id + ' · 服务配置码</div>'
+      + '<div class="code">' + code + '</div>';
+  }
+  document.getElementById('overlay').classList.add('show');
+}
+document.getElementById('overlay').addEventListener('click', () => {
+  document.getElementById('overlay').classList.remove('show');
+});
+async function refresh() {
+  try {
+    const r = await fetch('/api/v1/nodes');
+    const v = await r.json();
+    const tb = document.querySelector('#nodes-table tbody');
+    if (!v.nodes || !v.nodes.length) {
+      tb.innerHTML = '<tr><td colspan="7" class="dim">暂无节点——部署 hypercast-relay 并设置 HYPERCAST_DIRECTORY_URL 即可出现在这里</td></tr>';
+    } else {
+      tb.innerHTML = v.nodes.map((n, i) => {
+        const pr = n.probed, rp = n.reported;
+        const probeCell = pr
+          ? (pr.status === 'up'
+              ? '<span class="dot up"></span>在线 · ' + (pr.latency_ms != null ? pr.latency_ms + ' ms' : '')
+              : '<span class="dot down"></span>不可达')
+          : '<span class="dot unknown"></span>待探测';
+        const selfCell = rp
+          ? 'uptime ' + Math.floor(rp.uptime_s/3600) + 'h' + Math.floor(rp.uptime_s%3600/60) + 'm'
+            + '<br><span class="dim">注册 ' + (rp.metrics.mailbox_registrations_total || 0)
+            + ' · 请求 ' + (rp.metrics.session_requests_total || 0) + '</span>'
+          : '—';
+        return '<tr><td>' + n.node_id + (n.region ? '<br><span class="dim">' + n.region + '</span>' : '') + '</td>'
+          + '<td>' + probeCell + '</td>'
+          + '<td>' + selfCell + '</td>'
+          + '<td>' + (n.protocol_version || '—') + '</td>'
+          + '<td>' + fmtAgo(n.last_seen) + '</td>'
+          + '<td style="word-break:break-all">' + (n.signal_url || '—') + '</td>'
+          + '<td>' + (n.signal_url ? '<button class="btn" data-idx="' + i + '">配置码</button>' : '') + '</td>'
+          + '</tr>';
+      }).join('');
+      tb.querySelectorAll('button[data-idx]').forEach(b =>
+        b.addEventListener('click', () => showQr(v.nodes[+b.dataset.idx])));
+    }
+    document.getElementById('footer').textContent =
+      '共 ' + (v.nodes ? v.nodes.length : 0) + ' 个节点 · 每 30 秒自动刷新 · 遥测仅聚合计数，绝无用户粒度数据';
+  } catch (e) {
+    document.querySelector('#nodes-table tbody').innerHTML =
+      '<tr><td colspan="7" class="dim">加载失败：' + e + '</td></tr>';
+  }
+}
+refresh();
+setInterval(refresh, 30000);
+</script>
+</body>
+</html>
