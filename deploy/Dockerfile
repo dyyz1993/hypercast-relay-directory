@@ -1,6 +1,6 @@
 FROM rust:1.82-slim AS build
 WORKDIR /build
-COPY Cargo.toml ./
+COPY Cargo.toml Cargo.lock ./
 COPY src ./src
 COPY web ./web
 # web/ 必须在 include_str! 之前就位
