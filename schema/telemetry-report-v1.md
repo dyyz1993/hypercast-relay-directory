@@ -40,3 +40,9 @@
 
 - hypercast-relay `server/src/telemetry.rs`：每 60s 上报，`HYPERCAST_DIRECTORY_URL` 未设 = 完全关闭（opt-in）。
 - 本目录 `src/api.rs::report`：接收端。
+
+## v1.1 变更（已实现）
+
+`report` 新增可选字段 `turn_urls: string[]`——节点自报配置的 TURN 地址（如 `["turn:turn.example.com:3478"]`）。
+目录据此对 TURN 端口做 **UDP STUN Binding 实测**，探测通过 = 完整中继节点（网页亮「中继 ✓」）；
+未配置或探测失败 = 仅信令节点（标注「无中继兜底」）。未携带该字段按空处理（向后兼容）。

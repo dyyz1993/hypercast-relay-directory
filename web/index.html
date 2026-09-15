@@ -122,7 +122,13 @@ async function refresh() {
             + '<br><span class="dim">注册 ' + (rp.metrics.mailbox_registrations_total || 0)
             + ' · 请求 ' + (rp.metrics.session_requests_total || 0) + '</span>'
           : '—';
-        return '<tr><td>' + n.node_id + (n.region ? '<br><span class="dim">' + n.region + '</span>' : '') + '</td>'
+        const cap = n.turn_probed
+          ? (n.turn_probed.status === 'udp-ok'
+              ? '<span style="color:var(--success);font-weight:600">中继 ✓</span>'
+              : '<span class="dim">TURN 不可达</span>')
+          : (n.turn_urls && n.turn_urls.length ? '<span class="dim">TURN 待探测</span>' : '<span class="dim">仅信令 · 无中继兜底</span>');
+        return '<tr><td>' + n.node_id + (n.region ? '<br><span class="dim">' + n.region + '</span>' : '')
+          + '<br>' + cap + '</td>'
           + '<td>' + probeCell + '</td>'
           + '<td>' + bwCell + '</td>'
           + '<td>' + selfCell + '</td>'

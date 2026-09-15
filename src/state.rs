@@ -29,6 +29,13 @@ pub struct TelemetrySnapshot {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct TurnProbeSnapshot {
+    /// `udp-ok` | `fail`（UDP STUN Binding 是否应答）
+    pub status: String,
+    pub checked_at: i64,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct ProbeSnapshot {
     /// `up` | `down`
     pub status: String,
@@ -59,6 +66,12 @@ pub struct NodeRecord {
     /// 最近 N 次探测是否成功（新→旧）；稳定性据此计算。
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub probe_history: Vec<bool>,
+    /// 节点自报配置的 TURN 地址（目录据此做中继能力分级探测）。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub turn_urls: Vec<String>,
+    /// 最近一次 TURN 探测结果（UDP STUN Binding 实测）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub turn_probed: Option<TurnProbeSnapshot>,
     /// 最近一次实测带宽（kbps，目录 → 节点方向）。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bandwidth_recent_kbps: Option<u64>,
@@ -72,6 +85,13 @@ pub struct NodeRecord {
 }
 
 impl NodeRecord {
+    /// 中继能力：TURN 探测通过 = 完整中继节点；否则为仅信令节点。
+    pub fn relay_capable(&self) -> bool {
+        self.turn_probed
+            .as_ref()
+            .is_some_and(|t| t.status == "udp-ok")
+    }
+
     /// 稳定性：最近探测历史成功率（0-100）。无历史返回 None。
     pub fn availability_pct(&self) -> Option<u64> {
         if self.probe_history.is_empty() {
@@ -145,6 +165,8 @@ impl Directory {
             reported: None,
             probed: None,
             probe_history: Vec::new(),
+            turn_urls: Vec::new(),
+            turn_probed: None,
             bandwidth_recent_kbps: None,
             bandwidth_samples_kbps: Vec::new(),
             bandwidth_at: None,
@@ -188,6 +210,7 @@ impl Directory {
         meta: NodeMeta,
         uptime_s: u64,
         metrics: HashMap<String, u64>,
+        turn_urls: Vec<String>,
     ) -> anyhow::Result<NodeRecord> {
         let mut nodes = self.nodes.write().unwrap();
         let now = now_secs();
@@ -203,6 +226,9 @@ impl Directory {
         }
         if meta.protocol_version.is_some() {
             rec.protocol_version = meta.protocol_version;
+        }
+        if !turn_urls.is_empty() {
+            rec.turn_urls = turn_urls;
         }
         rec.reported = Some(TelemetrySnapshot {
             uptime_s,
@@ -244,6 +270,20 @@ impl Directory {
         });
         rec.probe_history.insert(0, ok);
         rec.probe_history.truncate(PROBE_HISTORY_LEN);
+        drop(nodes);
+        self.persist()?;
+        Ok(())
+    }
+
+    /// 记录一次 TURN 探测结果（能力分级依据）。
+    pub fn set_turn_probe(&self, node_id: &str, ok: bool) -> anyhow::Result<()> {
+        let mut nodes = self.nodes.write().unwrap();
+        if let Some(rec) = nodes.get_mut(node_id) {
+            rec.turn_probed = Some(TurnProbeSnapshot {
+                status: if ok { "udp-ok".into() } else { "fail".into() },
+                checked_at: now_secs(),
+            });
+        }
         drop(nodes);
         self.persist()?;
         Ok(())
@@ -303,14 +343,14 @@ mod tests {
     #[test]
     fn report_auto_registers_and_merges() {
         let dir = Directory::in_memory();
-        dir.apply_report("a", meta(Some("http://x:1")), 60, HashMap::new())
+        dir.apply_report("a", meta(Some("http://x:1")), 60, HashMap::new(), vec![])
             .unwrap();
         let rec = dir.get("a").unwrap();
         assert_eq!(rec.signal_url.as_deref(), Some("http://x:1"));
         assert_eq!(rec.reported.as_ref().unwrap().uptime_s, 60);
 
         // signal_url=None 不覆盖已有值
-        dir.apply_report("a", meta(None), 120, HashMap::new())
+        dir.apply_report("a", meta(None), 120, HashMap::new(), vec![])
             .unwrap();
         let rec = dir.get("a").unwrap();
         assert_eq!(rec.signal_url.as_deref(), Some("http://x:1"));
@@ -335,6 +375,36 @@ mod tests {
         assert_eq!(dir.get("a").unwrap().probed.unwrap().status, "up");
         assert_eq!(dir.get("a").unwrap().probed.unwrap().latency_ms, Some(12));
         assert_eq!(dir.get("a").unwrap().availability_pct(), Some(40)); // 2/5
+    }
+
+    #[test]
+    fn turn_capability_classification() {
+        let dir = Directory::in_memory();
+        // 仅信令节点：无 turn_urls → 未探测 → 非中继
+        dir.apply_report("s", meta(Some("http://x:1")), 1, HashMap::new(), vec![])
+            .unwrap();
+        assert!(!dir.get("s").unwrap().relay_capable());
+
+        // 完整中继节点：上报 TURN 地址 + 探测通过
+        dir.apply_report(
+            "r",
+            meta(Some("http://x:2")),
+            1,
+            HashMap::new(),
+            vec!["turn:turn.example.com:3478".to_owned()],
+        )
+        .unwrap();
+        assert_eq!(
+            dir.get("r").unwrap().turn_urls,
+            vec!["turn:turn.example.com:3478"]
+        );
+        assert!(!dir.get("r").unwrap().relay_capable()); // 探测前不算
+        dir.set_turn_probe("r", true).unwrap();
+        assert!(dir.get("r").unwrap().relay_capable());
+
+        // 探测失败不算中继
+        dir.set_turn_probe("r", false).unwrap();
+        assert!(!dir.get("r").unwrap().relay_capable());
     }
 
     #[test]
@@ -373,7 +443,7 @@ mod tests {
         let _ = std::fs::remove_file(&tmp);
         {
             let dir = Directory::load(Some(&tmp)).unwrap();
-            dir.apply_report("a", meta(Some("http://x:1")), 5, HashMap::new())
+            dir.apply_report("a", meta(Some("http://x:1")), 5, HashMap::new(), vec![])
                 .unwrap();
             dir.set_probe("a", true, Some(9), Some(200)).unwrap();
             dir.set_bandwidth("a", 4096).unwrap();

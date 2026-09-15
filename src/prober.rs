@@ -42,7 +42,29 @@ pub fn spawn(directory: Arc<Directory>, interval: Duration) {
                 match probe {
                     Ok(Ok((ms, code))) => {
                         let _ = directory.set_probe(&node_id, true, Some(ms), Some(code));
-                        // 2) 带宽实测（仅在线节点；旧版节点无此端点则静默跳过）
+                        // 2) 中继能力分级：对自报 TURN 地址做 UDP STUN Binding 实测
+                        let turn_urls = directory
+                            .get(&node_id)
+                            .map(|n| n.turn_urls.clone())
+                            .unwrap_or_default();
+                        if !turn_urls.is_empty() {
+                            let nid = node_id.clone();
+                            let tp = tokio::task::spawn_blocking(move || {
+                                turn_urls
+                                    .iter()
+                                    .find_map(|u| {
+                                        crate::stun::parse_turn_host_port(u).and_then(|(h, p)| {
+                                            crate::stun::binding_probe(&h, p).then_some(true)
+                                        })
+                                    })
+                                    .unwrap_or(false)
+                            })
+                            .await;
+                            if let Ok(ok) = tp {
+                                let _ = directory.set_turn_probe(&node_id, ok);
+                            }
+                        }
+                        // 3) 带宽实测（仅在线节点；旧版节点无此端点则静默跳过）
                         let nid = node_id.clone();
                         let speed = tokio::task::spawn_blocking(move || {
                             measure_bandwidth(&nid, &speed_base)

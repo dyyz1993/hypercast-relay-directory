@@ -80,6 +80,8 @@ pub struct ReportRequest {
     pub node_id: String,
     pub signal_url: Option<String>,
     pub protocol_version: Option<String>,
+    #[serde(default)]
+    pub turn_urls: Vec<String>,
     pub uptime_s: u64,
     #[serde(default)]
     pub metrics: HashMap<String, u64>,
@@ -104,7 +106,7 @@ async fn report(
         protocol_version: req.protocol_version,
         owner_contact: None,
     };
-    dir.apply_report(&node_id, meta, req.uptime_s, req.metrics)
+    dir.apply_report(&node_id, meta, req.uptime_s, req.metrics, req.turn_urls)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     Ok(StatusCode::NO_CONTENT)
 }
